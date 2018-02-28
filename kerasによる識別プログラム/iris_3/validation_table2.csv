@@ -1,0 +1,4 @@
+,setosa,versicolor,virginica
+setosa,1.0,0.0,0.0
+versicolor,0.0,1.0,0.0
+virginica,0.0,0.0,1.0
