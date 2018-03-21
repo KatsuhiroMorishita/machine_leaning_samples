@@ -51,15 +51,19 @@ def read_image(dir_name, data_format="channels_last", size=(32, 32), mode="RGB",
 def split(arr1, arr2, rate):
     """ 引数で受け取ったリストをrateの割合でランダムに抽出・分割する
     """
-    arr1_2, arr2_2 = [], []
+    if len(arr1) != len(arr2):
+        return
 
-    times = int(rate * len(arr1))
+    arr1_1, arr2_1 = list(arr1), list(arr2)  # popを使いたいので、listに変換
+    arr1_2, arr2_2 = [], []                  # 抽出したものを格納する
+
+    times = int(rate * len(arr1_1))
     for _ in range(times):
-        i = np.random.randint(0, len(arr1))
-        arr1_2.append(arr1.pop(i))
-        arr2_2.append(arr2.pop(i))
+        i = np.random.randint(0, len(arr1_1))  # 乱数で抽出する要素番号を作成
+        arr1_2.append(arr1_1.pop(i))
+        arr2_2.append(arr2_1.pop(i))
 
-    return arr1, arr2, arr1_2, arr2_2
+    return np.array(arr1_1), np.array(arr2_1), np.array(arr1_2), np.array(arr2_2)
 
 # 関数の動作テスト
 """
@@ -70,7 +74,19 @@ exit()
 """
 
 
-def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB", resize_filter=Image.NEAREST, preprocess_func=None, validation_rate=0.1):
+def one_hotencoding(data=[]):
+    """ one-hotencodingを行う
+    data: list<ndarray>, 1次元のndarrayを格納したリスト
+    """
+    ans = []
+    for mem in data:
+        if len(mem) > 0:
+            val = np_utils.to_categorical(mem)
+            ans.append(val)
+    return ans
+
+
+def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB", resize_filter=Image.NEAREST, preprocess_func=None):
     """ リストで複数指定されたフォルダ内にある画像を読み込んで、リストとして返す
     通常は教師データの読み込みを想定している。
 
@@ -80,24 +96,18 @@ def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB
     mode: str, 読み込んだ後の画像の変換モード
     resize_filter: int, Image.NEARESTなど、リサイズに使うフィルターの種類。処理速度が早いやつは粗い
     preprocess_func: func, 前処理を行う関数
-    validation_rate: float, 検証用に使うデータの割合。0-1.0
     """
-    x_train, y_train = [], []  # 学習用のデータを格納する
-    x_test, y_test = [], []    # 検証用のデータを格納する
-    y_test_onehot = []         # y_testをone-hotencodingしたオブジェクト
-    label_dict = {}            # 番号からフォルダ名を返す辞書
-    weights = []               # 学習の重み
+    x, y = [], []       # 読み込んだデータと正解ラベル（整数）を格納する
+    label_dict = {}     # 番号からフォルダ名を返す辞書
+    weights = []        # 学習の重み
 
     for i in range(len(dir_names)):    # 貰ったフォルダ名の数だけループを回す
         name = dir_names[i]
         label_dict[i] = name           # 番号からフォルダ名を取得できる辞書を作成（予測段階で役に立つ）
         imgs = read_image(name, data_format=data_format, size=size, mode=mode, resize_filter=resize_filter)
         label = [i] * len(imgs)
-        x1, y1, x2, y2 = split(imgs, label, validation_rate)   # 教師データを学習用と検証用に分割
-        x_train = x_train + x1
-        y_train = y_train + y1
-        x_test = x_test + x2
-        y_test = y_test + y2
+        x = x + imgs
+        y = y + label
         weights.append(len(imgs))
 
     # クラスごとの重みの計算と、重みの辞書の作成（教師データ数の偏りを是正する）
@@ -107,16 +117,9 @@ def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB
 
     # 画像の前処理
     if preprocess_func is not None:
-        x_train = preprocess_func(x_train)
-        x_test = preprocess_func(x_test)
+        x = preprocess_func(x)
 
-    # 正解ラベルをone-hotencoding（1次元ベクトル→2次元のmatrixになる）
-    if len(y_train) > 0:
-        y_train = np_utils.to_categorical(y_train)
-    if len(y_test) > 0:
-        y_test_onehot = np_utils.to_categorical(y_test)
-
-    return np.array(x_train), np.array(y_train), np.array(x_test), np.array(y_test_onehot), y_test, weights_dict, label_dict
+    return np.array(x), np.array(y), weights_dict, label_dict
 
 
 
@@ -235,7 +238,9 @@ def save_validation_table(prediction, correct_data, label_dict):
 
 def main():
     # 画像を読み込む
-    x_train, y_train, x_test, y_test, y_test_o, weights_dict, label_dict = read_images(['1_train', '2_train'], preprocess_func=preprocessing)
+    x, y, weights_dict, label_dict = read_images(['1_train', '2_train'], preprocess_func=preprocessing)
+    x_train, y_train_o, x_test, y_test_o = split(x, y, 0.1)         # データを学習用と検証用に分割
+    y_train, y_test = one_hotencoding(data=[y_train_o, y_test_o])   # 正解ラベルをone-hotencoding
     print(x_train.shape, y_train.shape)  # 諸々を確認のために表示
     print(x_test.shape, y_test.shape)
     print(weights_dict)
