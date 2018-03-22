@@ -97,7 +97,7 @@ def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB
     resize_filter: int, Image.NEARESTなど、リサイズに使うフィルターの種類。処理速度が早いやつは粗い
     preprocess_func: func, 前処理を行う関数
     """
-    x, y = [], []       # 読み込んだデータと正解ラベル（整数）を格納する
+    x, y = [], []       # 読み込んだ画像データと正解ラベル（整数）を格納する
     label_dict = {}     # 番号からフォルダ名を返す辞書
     weights = []        # 学習の重み
 
