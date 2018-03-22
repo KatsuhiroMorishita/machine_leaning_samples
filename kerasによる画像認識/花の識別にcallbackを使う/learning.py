@@ -236,7 +236,8 @@ def save_validation_table(prediction, correct_data, label_dict):
 
 
 def restore(files):
-    """
+    """ 保存されているファイルを読み込んでリストで返す
+    files: list<str>, ファイル名がリストに格納されている事を想定
     """
     for fname in files:
         if os.path.exists(fname) == False:
