@@ -4,6 +4,7 @@
 # created: 2018-03-20
 import keras
 from keras.models import Sequential
+from keras.models import load_model
 from keras.layers import Dense, Dropout, Activation, Flatten
 from keras.layers import Conv2D, MaxPooling2D
 from keras.preprocessing.image import ImageDataGenerator
@@ -13,6 +14,7 @@ from PIL import Image
 import numpy as np
 import pickle
 import pandas as pd
+import sys
 import os
 
 
@@ -97,7 +99,7 @@ def read_images(dir_names, data_format="channels_last", size=(32, 32), mode="RGB
     resize_filter: int, Image.NEARESTなど、リサイズに使うフィルターの種類。処理速度が早いやつは粗い
     preprocess_func: func, 前処理を行う関数
     """
-    x, y = [], []       # 読み込んだデータと正解ラベル（整数）を格納する
+    x, y = [], []       # 読み込んだ画像データと正解ラベル（整数）を格納する
     label_dict = {}     # 番号からフォルダ名を返す辞書
     weights = []        # 学習の重み
 
@@ -170,12 +172,10 @@ def build_model(input_shape, output_dim, data_format):
     model.add(Activation('softmax'))
     opt = keras.optimizers.Adam(lr=0.0005, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0003) # 最適化器のセット。lrは学習係数
     model.compile(optimizer=opt,             # コンパイル
-          loss='categorical_crossentropy',   # 損失関数は、判別問題なのでcategorical_crossentropyを使う
-          metrics=['accuracy'])
+        loss='categorical_crossentropy',   # 損失関数は、判別問題なのでcategorical_crossentropyを使う
+        metrics=['accuracy'])
     print(model.summary())
-
     return model
-
 
 
 def plot_history(history):
@@ -235,18 +235,52 @@ def save_validation_table(prediction, correct_data, label_dict):
 
 
 
+def restore(files):
+    """
+    """
+    for fname in files:
+        if os.path.exists(fname) == False:
+            return
 
-def main():
+    ans = []
+    for fname in files:
+        if "npy" in fname:
+            ans.append(np.load(fname))
+        elif "pickle" in fname:
+            with open(fname, 'rb') as f:
+                ans.append(pickle.load(f))
+    return ans
+
+
+def load():
+    """ 画像の読み込みと教師データの作成と保存を行う
+    """
     # 画像を読み込む
     x, y, weights_dict, label_dict = read_images(['1_train', '2_train'], preprocess_func=preprocessing)
     x_train, y_train_o, x_test, y_test_o = split(x, y, 0.1)         # データを学習用と検証用に分割
     y_train, y_test = one_hotencoding(data=[y_train_o, y_test_o])   # 正解ラベルをone-hotencoding
-    print(x_train.shape, y_train.shape)        # 諸々を確認のために表示
-    print(x_test.shape, y_test.shape)
-    print(weights_dict)
-    print(label_dict)
-    print(y_train, y_test_o)
 
+    # 型の変換
+    x_train, x_test = x_train.astype(np.float16), x_test.astype(np.float16)
+    y_train_o, y_test_o = y_train_o.astype(np.int8), y_test_o.astype(np.int8)
+
+    # 保存
+    np.save('x_train.npy', x_train)
+    np.save('y_train_o.npy', y_train_o)
+    np.save('x_test.npy', x_test)
+    np.save('y_test_o.npy', y_test_o)
+    with open('weights_dict.pickle', 'wb') as f: # 再利用のために、ファイルに保存しておく
+        pickle.dump(weights_dict, f)
+    with open('label_dict.pickle', 'wb') as f: # 再利用のために、ファイルに保存しておく
+        pickle.dump(label_dict, f)
+
+    return x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test
+
+
+
+def main():
+    x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test = [None] * 8
+    model = None
 
     # 教師データを無限に用意するオブジェクトを作成
     datagen = ImageDataGenerator(
@@ -263,14 +297,43 @@ def main():
         height_shift_range=0.3)                 # 縦方向のシフト率
     #datagen.fit(x_train)                        # zca用に、教師データの統計量を内部的に求める
 
-    # モデルの作成
-    model = build_model(input_shape=x_train.shape[1:], output_dim=len(label_dict), data_format=data_format)
+    
+    # 教師データの読み込みと、モデルの構築。必要なら、callbackで保存していた結合係数を読み込む
+    load_flag = False
+    if len(sys.argv) > 1 and sys.argv[1] == "retry":
+        obj = restore(['x_train.npy', 'y_train_o.npy', 'x_test.npy', 'y_test_o.npy', 'weights_dict.pickle', 'label_dict.pickle'])
+        if os.path.exists("cb_model.hdf5") and obj is not None:
+            # 保存してたファイルからデータを復元
+            x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict = obj
+            y_train, y_test = one_hotencoding(data=[y_train_o, y_test_o])   # 正解ラベルをone-hotencoding
+
+            # モデルを再構築
+            print("--load 'cb_model.hdf5'--")
+            model = load_model('cb_model.hdf5')
+        else:
+            print("--failure for restore--")
+            load_flag = True
+    else:
+        load_flag = True
+
+    if load_flag:  # 画像読み込みからモデルの構築までを実施
+        x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test = load()
+        model = build_model(input_shape=x_train.shape[1:], output_dim=len(label_dict), data_format=data_format)   # モデルの作成
+        open("model", "w").write(model.to_json())  # モデル情報の保存
+    
+
+    # 諸々を確認のために表示
+    print(x_train.shape, y_train.shape)
+    print(x_test.shape, y_test.shape)
+    print(weights_dict)
+    print(label_dict)
+    print(y_train, y_test_o)
 
     # 学習
     epochs = 30                 # 1つのデータ当たりの学習回数
     batch_size = 16             # 学習係数を更新するために使う教師データ数
     cb_stop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, mode='auto')  # 学習を適当なタイミングで止める仕掛け
-    cb_save = keras.callbacks.ModelCheckpoint("cb_param.hdf5", monitor='val_loss', verbose=0, save_best_only=True, save_weights_only=True, mode='auto', period=5) # 学習中に
+    cb_save = keras.callbacks.ModelCheckpoint("cb_model.hdf5", monitor='val_loss', verbose=0, save_best_only=True, save_weights_only=False, mode='auto', period=5) # 学習中に
 
     history = model.fit_generator(   # ImageDataGeneratorを使った学習
         datagen.flow(x_train, y_train, batch_size=batch_size, shuffle=True),  # シャッフルは順序によらない学習のために重要
@@ -289,12 +352,9 @@ def main():
     save_validation_table(result, correct_data, label_dict)
 
     # 学習結果を保存
-    print(model.summary())                     # レイヤー情報を表示(上で表示させると流れるので)
-    open("model", "w").write(model.to_json())  # モデル情報の保存
-    model.save_weights('param.hdf5')           # 獲得した結合係数を保存
-    with open('label_dict.pickle', 'wb') as f: # 再利用のために、ファイルに保存しておく
-            pickle.dump(label_dict, f)
-    plot_history(history)                      # lossの変化をグラフで表示
+    print(model.summary())      # レイヤー情報を表示(上で表示させると流れるので)
+    model.save('model.hdf5')    # 獲得した結合係数を保存
+    plot_history(history)       # lossの変化をグラフで表示
 
 
 
