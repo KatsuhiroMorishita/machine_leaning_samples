@@ -320,7 +320,6 @@ def main():
     if load_flag:  # 画像読み込みからモデルの構築までを実施
         x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test = load()
         model = build_model(input_shape=x_train.shape[1:], output_dim=len(label_dict), data_format=data_format)   # モデルの作成
-        open("model", "w").write(model.to_json())  # モデル情報の保存
     
 
     # 諸々を確認のために表示
