@@ -12,23 +12,21 @@ from sklearn.ensemble import RandomForestRegressor as mc
 # データの読み込み
 data = pandas.read_csv("data.csv")
 #print(data)
-x = (data.iloc[:, :-1]).values # 最終列以外を取得
-y = (data.iloc[:, -1:]).values # 最終列を取得
-y = np.ravel(y) # transform 2次元 to 1次元 ぽいこと
+x = (data.iloc[:, :-1]).values   # 最終列以外を取得
+y = (data.iloc[:, -1:]).values   # 最終列を取得
+y = np.ravel(y)   # transform 2次元 to 1次元 ぽいこと
 
 # 学習
-clf = mc()               # 学習器
+clf = mc()                 # 学習器
 clf.fit(x, y)
-result = clf.score(x, y) # 学習データに対する、適合率
+result = clf.score(x, y)   # 学習データに対する、適合率
 
 # 学習結果を保存
 with open('entry.pickle', 'wb') as f:
-	pickle.dump(clf, f)
+    pickle.dump(clf, f)
 
-# 1個だけテスト
-test = clf.predict([x[0]])
+# 学習結果の確認
+test = clf.predict([x[0]])  # 1個だけテスト
 print(test)
-
-# 額数データに対する適合率
-print(result)
-print(clf.feature_importances_)	# 各特徴量に対する寄与度を求める
+print(result)   # 学習データに対する適合率
+print(clf.feature_importances_)	  # 各特徴量に対する寄与度を求める

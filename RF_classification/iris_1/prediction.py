@@ -13,7 +13,6 @@ import numpy as np
 # データの読み込み
 data = pandas.read_csv("iris_test.csv")
 #print(data)
-s = len(data.columns) # 列数の取得
 x = (data.iloc[:, :-1]).values # transform to ndarray
 
 # 機械学習器を復元
