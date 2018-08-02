@@ -12,7 +12,7 @@ import seaborn as sns
 val_num = 5 # 独立変数の数
 n = 300 # 各クラスのレコード数
 scale = 10 # 変数の大きさの目安というか
-cls_num = 5 # クラス数
+cls_num = 3 # クラス数
 
 # 各クラスの各次元における平均と標準偏差を決める。
 means = []
@@ -52,14 +52,17 @@ print(df)
 # 保存する
 df.to_csv("classification_data.csv", index=False)
 
+
 # パラメータも保存しておく
 class_names = ["class_{0}".format(k) for k in range(cls_num)]
-df2 = pd.DataFrame(means, columns=class_names, index=val_names)
+_means = np.array(means).T
+df2 = pd.DataFrame(_means, columns=class_names, index=val_names)
 print("means", df2)
 df2.to_csv("cof_means.csv", index=False)
 
 class_names = ["class_{0}".format(k) for k in range(cls_num)]
-df3 = pd.DataFrame(stds, columns=class_names, index=val_names)
+_stds = np.array(stds).T
+df3 = pd.DataFrame(_stds, columns=class_names, index=val_names)
 print("stds", df3)
 df3.to_csv("cof_stds.csv", index=False)
 
