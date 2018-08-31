@@ -144,7 +144,7 @@ def main():
         ) # 返り値には、学習中のlossやaccなどが格納される（metricsに指定する必要がある）
 
     # 学習成果のチェックとして、検証データに対して分割表を作成する
-    check_validation(0.4, model, x_test, y_test_o, label_dict, batch_size)
+    check_validation(0.4, model, x_test, y_test_o, label_dict)
 
     # 学習結果を保存
     print(model.summary())      # レイヤー情報を表示(上で表示させると流れるので)

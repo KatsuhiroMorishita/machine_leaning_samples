@@ -149,10 +149,13 @@ def save_validation_table(predicted_classse, correct_classse, label_dict):
 
 
 
-def check_validation(th, model, x_test, y_test_o, label_dict, batch_size):
+def check_validation(th, model, x_test, y_test_o, label_dict, batch_size=None):
     """ 学習成果のチェックとして、検証データに対して分割表を作成する
     th: float, 尤度の閾値
     """
+    if batch_size is None:
+        batch_size = len(x_test)
+
     result_raw = model.predict(x_test, batch_size=batch_size, verbose=0) # クラス毎の尤度を取得。 尤度の配列がレコードの数だけ取得される
     result_list = [len(arr) if np.max(arr) < th else arr.argmax() for arr in result_raw]  # 最大尤度を持つインデックスのlistを作る。ただし、最大尤度<thの場合は、"ND"扱いとする
     predicted_classes = np.array([label_dict[class_id] for class_id in result_list])   # 予測されたclass_local_idをラベルに変換
@@ -306,7 +309,7 @@ def main():
     #"""
 
     # 学習成果のチェックとして、検証データに対して分割表を作成する
-    check_validation(0.4, model, x_test, y_test_o, label_dict, batch_size)
+    check_validation(0.4, model, x_test, y_test_o, label_dict)
 
     # 学習結果を保存
     print(model.summary())      # レイヤー情報を表示(上で表示させると流れるので)
