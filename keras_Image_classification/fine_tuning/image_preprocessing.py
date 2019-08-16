@@ -2,6 +2,7 @@
 # main()では、画像の読み込みと保存を行います。
 # author: Katsuhiro MORISHITA　森下功啓
 # created: 2018-08-20
+# lisence: MIT. If you use this program in your study, you should write shaji in your paper.
 from matplotlib import pylab as plt
 from PIL import Image
 from skimage.transform import rotate   # scipyのrotateは推奨されていない@2018-08ので、skimageを使う。こっちの方が使い勝手が良い
@@ -31,7 +32,7 @@ def read_name_dict(fname, skiprows=[], key_valule=[0, 1], delimiter=","):
 
 def read_image(param):
     """ 指定されたフォルダ内の画像をリストとして返す
-    
+    読み込みはディレクトリ単位で行う。
     param: dict, 計算に必要なパラメータを収めた辞書
     """
     dir_name = param["dir_name"]            # dir_name: str, フォルダ名、又はフォルダへのパス
@@ -42,20 +43,32 @@ def read_image(param):
     image_list = []                  # 読み込んだ画像データを格納するlist
     name_list = []                   # 読み込んだファイルのファイル名
     files = os.listdir(dir_name)     # ディレクトリ内部のファイル一覧を取得
-    print("--files--", files[:20])
+    print("--dir--: ", dir_name)
+    print("--files (head 20)--", files[:20])
 
     for file in files:
         root, ext = os.path.splitext(file)  # 拡張子を取得
         if ext != ".jpg" and ext != ".bmp" and ext != ".png":
             continue
+        fname = os.path.basename(file)
+        if fname[0] == ".":          # Macが自動的に生成するファイルを除外
+            continue
 
         path = os.path.join(dir_name, file)             # ディレクトリ名とファイル名を結合して、パスを作成
-        image = Image.open(path).resize(size, resample=resize_filter)   # 画像の読み込み
-        image = image.resize(size, resample=resize_filter)              # 画像のリサイズ
+        image = Image.open(path)                        # 画像の読み込み
+        if "preprocess_each_image_func" in param:       # 必要なら前処理
+            func = param["preprocess_each_image_func"]
+            image = func(image, param)
+            if image is None:
+                print(path, "-- preprocessing function returned None object.")
+                continue
+        image = image.resize(size, resample=resize_filter)     # 画像のリサイズ
         image = image.convert(mode)                     # 画像のモード変換。　mode=="LA":透過チャンネルも考慮して、グレースケール化, mode=="RGB":Aを無視
         image = np.array(image)                         # ndarray型の多次元配列に変換
-        image = image.astype(np.float16)                # 型の変換（整数に変換すると、0-1にスケーリングシた際に、0や1になるのでfloatに変換）
-        if mode == "RGB" and data_format == "channels_first":
+        image = image.astype(np.float16)                # 型の変換（整数型のままだと、0-1にスケーリングシた際に、0や1になるのでfloatに変換）
+        if image.ndim == 2:                             # グレースケール画像だと2次元のはずなので、チャンネルの次元を増やす
+            image = image[:, :, np.newaxis]
+        if data_format == "channels_first":
             image = image.transpose(2, 0, 1)            # 配列を変換し、[[Redの配列],[Greenの配列],[Blueの配列]] のような形にする。
         image_list.append(image)                        # 出来上がった配列をimage_listに追加  
         name_list.append(file)
@@ -63,23 +76,34 @@ def read_image(param):
     return image_list, name_list
 
 
-def split(arr1, arr2, rate):
+
+def split(arr1, arr2, rate, names=None):
     """ 引数で受け取ったlistをrateの割合でランダムに抽出・分割する（副作用に注意）
+    基本的には、学習データと検証データに分けることを想定している。
     arr1, arr2: list<ndarray or list or int>, 画像や整数が入ったリストを期待している
+    rate: float, 抽出率。0.0~1.0
+    names: list<str>, 画像のファイル名を想定している。別に番号でもいいと思う。
     """
     if len(arr1) != len(arr2):
         raise ValueError("length of arr1 and arr2 is not equal.")
 
-    arr1_1, arr2_1 = arr1, arr2  # arr1, arr2を代入すると、副作用覚悟で使用メモリを少し減らす。副作用が嫌いなら、→　list(arr1), list(arr2)　を代入
+    arr1_1, arr2_1 = list(arr1), list(arr2)  # arr1, arr2を代入すると、副作用覚悟で使用メモリを少し減らす。副作用が嫌いなら、→　list(arr1), list(arr2)　を代入
     arr1_2, arr2_2 = [], []       # 抽出したものを格納する
+    names_copy = list(names)
 
     times = int(rate * len(arr1_1))
+    pop_list = []
     for _ in range(times):
         i = np.random.randint(0, len(arr1_1))  # 乱数で抽出する要素番号を作成
         arr1_2.append(arr1_1.pop(i))
         arr2_2.append(arr2_1.pop(i))
+        if names is not None:
+            pop_list.append(names_copy.pop(i))
 
-    return np.array(arr1_1), np.array(arr2_1), np.array(arr1_2), np.array(arr2_2)
+    if names is None:
+        return np.array(arr1_1), np.array(arr2_1), np.array(arr1_2), np.array(arr2_2)
+    else:
+        return np.array(arr1_1), np.array(arr2_1), np.array(arr1_2), np.array(arr2_2), pop_list
 
 # 関数の動作テスト
 """
@@ -131,7 +155,7 @@ def read_images1(param):
     フォルダ名がそのままクラス名でも、この関数で処理すること。
     param: dict, 計算に必要なパラメータを収めた辞書
     """
-    dir_names_dict = param["dir_names_dict"]     # dict<str:list<str>>, クラス毎にフォルダ名又はフォルダへのパスを格納した辞書。例：{"A":["dir_A1", "dir_A2"], "B":["dir_B"]}
+    dir_names_dict = param["dir_names_dict"]    # dict<str:list<str>>, クラス毎にフォルダ名又はフォルダへのパスを格納した辞書。例：{"A":["dir_A1", "dir_A2"], "B":["dir_B"]}
     x, y = [], []    # 読み込んだ画像データと正解ラベル（整数）を格納するリスト
     file_names = []  # 読み込んだ画像のファイル名のリスト
     size_dict = {}   # データの数をクラス毎に格納する辞書
@@ -139,14 +163,14 @@ def read_images1(param):
     class_name_list = sorted(dir_names_dict.keys())  # この時点ではstr。ソートすることで、local_id（プログラム中で割り振るクラス番号）とクラス名がずれない
     label_dict = {i:class_name_list[i]  for i in range(len(class_name_list))}   # local_idからクラス名を引くための辞書。ここでのlocal_idはこの学習内で通用するローカルなID。（予測段階で役に立つ）
     label_dict_inv = {class_name_list[i]:i  for i in range(len(class_name_list))}   # 逆に、クラス名から番号を引く辞書
-    output_dim = len(label_dict)        # 出力層に必要なユニット数（出力の次元数）
-    label_dict[len(label_dict)] = "ND"  # 分類不能に備えて、NDを追加
+    output_dim = len(label_dict)          # 出力層に必要なユニット数（出力の次元数）
+    label_dict[len(label_dict)] = "ND"    # 分類不能に備えて、NDを追加
 
 
     for class_name in class_name_list:    # 貰った辞書内のクラス数だけループを回す
         for dir_name in dir_names_dict[class_name]:   # クラス毎に、フォルダ名が格納されたリストから1つずつフォルダ名を取り出してループ
-            param["dir_name"] = dir_name
-            imgs, _file_names = read_image(param)    # file_namesは使わない
+            param["dir_name"] = dir_name              # 読み込み先のディレクトリを指定
+            imgs, _file_names = read_image(param)     # 画像の読み込み
             if len(imgs) == 0:
                 continue
 
@@ -191,8 +215,8 @@ def read_images2(param):
     label_dict[len(label_dict)] = "ND"  # 分類不能に備えて、NDを追加
 
     for dir_name in dir_names_list:    # 貰ったフォルダ名の数だけループを回す
-        param["dir_name"] = dir_name
-        imgs, _file_names = read_image(param)
+        param["dir_name"] = dir_name             # 読み込み先のディレクトリを指定
+        imgs, _file_names = read_image(param)    # 画像の読み込み
         if len(imgs) == 0:
             continue
 
@@ -422,13 +446,13 @@ class MyImageDataGenerator:
 
 def load_save_images(read_func, param, validation_rate=0.1):
     """ 画像の読み込みと教師データの作成と保存を行う
-    read_func: function, 画像を読み込む画像
+    read_func: function, 画像を読み込む関数
     param: dict<str: obj>, read_funcに渡すパラメータ 
     validation_rate: float, 検証に使うデータの割合
     """
     # 画像を読み込む
     x, y, weights_dict, label_dict, output_dim, file_names = read_func(param)
-    x_train, y_train_o, x_test, y_test_o = split(x, y, validation_rate)  # データを学習用と検証用に分割
+    x_train, y_train_o, x_test, y_test_o, test_file_names = split(x, y, validation_rate, file_names)  # データを学習用と検証用に分割
 
     if "preprocess_func" in param:   # 必要なら前処理
         preprocess_func = param["preprocess_func"]  # func, 前処理を行う関数
@@ -449,8 +473,10 @@ def load_save_images(read_func, param, validation_rate=0.1):
         pickle.dump(label_dict, f)
     with open('param.pickle', 'wb') as f:  # 再利用のために、ファイルに保存しておく
         pickle.dump(param, f)
+    with open('test_names.pickle', 'wb') as f:  # 再利用のために、ファイルに保存しておく
+        pickle.dump(test_file_names, f)
 
-    return x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim
+    return x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim, test_file_names
 
 
 
@@ -461,9 +487,11 @@ def main():
     dir_names_dict = {"yellow":["sample_image_flower/1_train"], 
                       "white":["sample_image_flower/2_train"]} 
     param = {"dir_names_dict":dir_names_dict, "data_format":data_format, "size":(32, 32), "mode":"RGB", "resize_filter":Image.NEAREST, "preprocess_func":preprocessing2}
-    x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim =load_save_images(read_images1, param, validation_rate=0.2)
+    x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim, test_file_names = load_save_images(read_images1, param, validation_rate=0.2)
 
-    
+    # 確認
+    print("test_file_names: ", test_file_names)
+
     # pattern 1, animal
     #dir_names_dict = {"cat":["sample_image_animal/cat"], 
     #                  "dog":["sample_image_animal/dog"]} 
