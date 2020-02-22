@@ -24,7 +24,7 @@ import image_preprocessing as ip
 
 
 def build_model(input_shape, output_dim, data_format):
-    """ 機械学習のモデルを作成する
+    """ 転移学習を利用したモデルを作成する
     入力は画像、出力はラベルという構造を想定しています。
     """
     base_model = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
@@ -56,7 +56,7 @@ def build_model(input_shape, output_dim, data_format):
 
 
 def build_model_simple(input_shape, output_dim, data_format):
-    """ 機械学習のモデルを作成する
+    """ 転移学習を利用しないモデルを作成する
     入力は画像、出力はラベルという構造を想定しています。
     """
     # モデルの作成
@@ -108,14 +108,15 @@ def plot_history(history):
 
 
 
-def save_validation_table(predicted_classse, correct_classse, label_dict):
+def save_validation_table(predicted_class, correct_class, label_dict):
     """ 学習に使わなかった検証データに対する予測と正解ラベルを使って、スレットスコアの表的なものを作って保存する
-    predicted_classse: list or ndarray, 1次元配列を想定。予測されたラベルが格納されている事を想定
-    correct_classse: list or ndrray, 1又は2次元配列を想定。正解ラベルが格納されている事を想定
-    label_dict: pandas.DataFrame, 整数のkeyでラベルを取り出す辞書を想定
+    predicted_class: list or ndarray, 1次元配列を想定。予測されたラベルが格納されている事を想定
+    correct_class: list or ndrray, 1又は2次元配列を想定。正解ラベルが格納されている事を想定
+    label_dict: dict, 整数のkeyでラベルを取り出す辞書を想定
     """
-    correct_classse = np.ravel(correct_classse) # 1次元配列に変換
-    #print(predicted_classse, correct_classse)
+    #print(predicted_class, correct_class)
+    correct_class = np.array(correct_class)
+    #predicted_class = np.array(predicted_class)
 
     # 行と列の名称のリストを作成
     keys = list(label_dict.keys())
@@ -126,9 +127,9 @@ def save_validation_table(predicted_classse, correct_classse, label_dict):
     # 結果を集計する
     df1 = pd.DataFrame(index=names, columns=names)  # 列名と行名がラベルのDataFrameを作成
     df1 = df1.fillna(0)               # とりあえず、0で全部埋める
-    for i in range(len(predicted_classse)):  # 行名と列名を指定しながら1を足す
-        v1 = predicted_classse[i]
-        v2 = correct_classse[i]
+    for i in range(len(predicted_class)):  # 行名と列名を指定しながら1を足す
+        v1 = predicted_class[i]
+        v2 = correct_class[i]
         #print("--v--", v1, v2)
         df1.loc[[v1],[v2]] += 1       # 行名と列名でセルを指定できる
     print("--件数でカウントした分割表--")
@@ -137,8 +138,8 @@ def save_validation_table(predicted_classse, correct_classse, label_dict):
 
     # 正解ラベルを使って正規化する
     df2 = df1.copy()
-    amount = [len(np.where(correct_classse==x)[0]) for x in names] # 正解ラベルをカウント
-    #amount = [len(np.where(predicted_classse==x)[0]) for x in names] # 予測値をカウント
+    amount = [len(np.where(correct_class==x)[0]) for x in names] # 正解ラベルをカウント
+    #amount = [len(np.where(predicted_class==x)[0]) for x in names] # 予測値をカウント
     print(amount)
     for i in range(len(df1)):
         df2.iloc[:,i] = df2.iloc[:,i] / amount[i] # 列単位で割る
@@ -150,18 +151,24 @@ def save_validation_table(predicted_classse, correct_classse, label_dict):
 
 
 def check_validation(th, model, x_test, y_test_o, label_dict, batch_size=None):
-    """ 学習成果のチェックとして、検証データに対して分割表を作成する
+    """ 学習成果のチェックとして、検証データに対して分割表を作成・保存し、正解状況をndarrayのbool配列で返す
     th: float, 尤度の閾値
+    model: 学習済みのモデル
+    x_test: ndarray, 検証用データ
+    y_test_o: ndarray, 検証用データの正解データ
+    label_dict: dict, keyがlocal_IDでvalueがラベルの辞書
     """
     if batch_size is None:
         batch_size = len(x_test)
 
     result_raw = model.predict(x_test, batch_size=batch_size, verbose=0) # クラス毎の尤度を取得。 尤度の配列がレコードの数だけ取得される
     result_list = [len(arr) if np.max(arr) < th else arr.argmax() for arr in result_raw]  # 最大尤度を持つインデックスのlistを作る。ただし、最大尤度<thの場合は、"ND"扱いとする
-    predicted_classes = np.array([label_dict[class_id] for class_id in result_list])   # 予測されたclass_local_idをラベルに変換
-    print("test result: ", predicted_classes)
-    correct_classse = [label_dict[num] for num in y_test_o]  # 正解class_idをラベルに変換
-    save_validation_table(predicted_classes, correct_classse, label_dict)
+    predicted_class = np.array([label_dict[class_id] for class_id in result_list])   # 予測されたclass_local_idをラベルに変換
+    print("test result: ", predicted_class)
+    correct_class = np.array([label_dict[num] for num in y_test_o])  # 正解class_idをラベルに変換
+    save_validation_table(predicted_class, correct_class, label_dict)
+
+    return correct_class == predicted_class
 
 
 
@@ -252,7 +259,7 @@ def main():
         dir_names_dict = {"yellow":["sample_image_flower/1_train"], 
                           "white":["sample_image_flower/2_train"]} 
         param = {"dir_names_dict":dir_names_dict, "data_format":data_format, "size":image_shape, "mode":"RGB", "resize_filter":Image.NEAREST, "preprocess_func":ip.preprocessing2}
-        x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim = ip.load_save_images(ip.read_images1, param, validation_rate=0.2)
+        x_train, y_train_o, x_test, y_test_o, weights_dict, label_dict, y_train, y_test, output_dim, test_file_names = ip.load_save_images(ip.read_images1, param, validation_rate=0.2)
         model = build_model_simple(input_shape=x_train.shape[1:], output_dim=output_dim, data_format=data_format)   # モデルの作成
         
         # pattern 1, animal
